@@ -1,11 +1,13 @@
 ---
 name: salesforce-query-openclaw
-description: Query Salesforce CRM data via Python with schema-adaptive onboarding. Use when you need to connect to a Salesforce org, discover available objects/fields, detect optional signal systems (like 6sense), build reusable field mappings, and run account/contact/opportunity/campaign/activity research without hardcoded org assumptions.
+description: Salesforce querying skill that adapts to each org's schema. Use when hardcoded CRM scripts keep breaking across environments and you need reliable account/contact/opportunity/campaign/activity workflows with secure Keychain credential handling.
 ---
 
 # Salesforce Query (Schema-Adaptive)
 
-Use this skill to onboard any Salesforce org, not just RevenueCat-specific field layouts.
+Most Salesforce scripts work in one org, then break in the next. This skill was built to fix that.
+
+It discovers your schema first, then runs reusable GTM workflows against what actually exists in your environment.
 
 ## 1) Configure credentials
 
@@ -37,7 +39,7 @@ Run an end-to-end discovery pass:
 python3 scripts/onboarding.py
 ```
 
-For stricter security (no credential file persisted):
+For session-only credentials (nothing persisted):
 
 ```bash
 python3 scripts/onboarding.py --no-save
