@@ -55,10 +55,9 @@ python3 scripts/onboarding.py \
 python3 scripts/credential_doctor.py
 ```
 
-Expected result for hardened setup:
+Expected result:
 
 - all three credential keys present in Keychain
-- legacy plaintext credential files absent
 
 ## Notes for production
 
