@@ -34,6 +34,8 @@ import subprocess
 from typing import Optional, List, Dict, Any
 from datetime import datetime, timedelta
 
+REQUEST_TIMEOUT = 20
+
 
 class MissingCredentialsError(Exception):
     """Raised when Salesforce credentials are not configured."""
@@ -146,6 +148,15 @@ def _is_valid_instance_url(instance_url: Optional[str]) -> bool:
     return bool(re.match(pattern, value))
 
 
+def _soql_escape(value: str) -> str:
+    """Escape user-provided text for safe embedding in SOQL string literals."""
+    return value.replace("\\", "\\\\").replace("'", "\\'")
+
+
+def _clamp_int(value: int, min_value: int, max_value: int) -> int:
+    return max(min_value, min(max_value, int(value)))
+
+
 def check_credentials() -> tuple[bool, List[str]]:
     """
     Check if all required credentials are configured.
@@ -204,7 +215,7 @@ class SalesforceClient:
             "grant_type": "client_credentials",
             "client_id": self.client_id,
             "client_secret": self.client_secret
-        })
+        }, timeout=REQUEST_TIMEOUT)
         
         if response.status_code != 200:
             raise Exception(f"Failed to get access token (HTTP {response.status_code})")
@@ -223,7 +234,8 @@ class SalesforceClient:
         
         response = requests.get(url, 
             headers={"Authorization": f"Bearer {token}"},
-            params={"q": soql}
+            params={"q": soql},
+            timeout=REQUEST_TIMEOUT,
         )
         
         if response.status_code != 200:
@@ -236,7 +248,8 @@ class SalesforceClient:
         while data.get("nextRecordsUrl"):
             response = requests.get(
                 f"{self.instance_url}{data['nextRecordsUrl']}",
-                headers={"Authorization": f"Bearer {token}"}
+                headers={"Authorization": f"Bearer {token}"},
+                timeout=REQUEST_TIMEOUT,
             )
             data = response.json()
             records.extend(data.get("records", []))
@@ -248,7 +261,7 @@ class SalesforceClient:
         token = self._get_access_token()
         url = f"{self.instance_url}/services/data/{self.API_VERSION}/sobjects/{object_name}/describe"
         
-        response = requests.get(url, headers={"Authorization": f"Bearer {token}"})
+        response = requests.get(url, headers={"Authorization": f"Bearer {token}"}, timeout=REQUEST_TIMEOUT)
         
         if response.status_code != 200:
             raise Exception(f"Describe failed (HTTP {response.status_code})")
@@ -261,10 +274,11 @@ class SalesforceClient:
     
     def get_account_by_name(self, name: str, fuzzy: bool = True) -> List[Dict[str, Any]]:
         """Find accounts by company name."""
+        safe_name = _soql_escape(name)
         if fuzzy:
-            where = f"Name LIKE '%{name}%'"
+            where = f"Name LIKE '%{safe_name}%'"
         else:
-            where = f"Name = '{name}'"
+            where = f"Name = '{safe_name}'"
         
         return self.query(f"""
             SELECT Id, Name, Website, Domain__c, Industry, 
@@ -279,7 +293,7 @@ class SalesforceClient:
     def get_account_by_domain(self, domain: str) -> List[Dict[str, Any]]:
         """Find accounts by website domain."""
         # Clean the domain
-        domain = domain.lower().replace("https://", "").replace("http://", "").replace("www.", "").rstrip("/")
+        domain = _soql_escape(domain.lower().replace("https://", "").replace("http://", "").replace("www.", "").rstrip("/"))
         
         return self.query(f"""
             SELECT Id, Name, Website, Domain__c, Industry,
@@ -295,13 +309,13 @@ class SalesforceClient:
                                   exclude_churned: bool = True,
                                   buying_stages: List[str] = None) -> List[Dict[str, Any]]:
         """Get accounts with high 6Sense intent scores."""
-        where_clauses = [f"accountIntentScore6sense__c >= {min_score}"]
+        where_clauses = [f"accountIntentScore6sense__c >= {_clamp_int(min_score, 0, 100)}"]
         
         if exclude_churned:
             where_clauses.append("(Churned__c = false OR Churned__c = null)")
         
         if buying_stages:
-            stages_str = "', '".join(buying_stages)
+            stages_str = "', '".join(_soql_escape(stage) for stage in buying_stages)
             where_clauses.append(f"accountBuyingStage6sense__c IN ('{stages_str}')")
         
         where = " AND ".join(where_clauses)
@@ -315,7 +329,7 @@ class SalesforceClient:
             FROM Account
             WHERE {where}
             ORDER BY accountIntentScore6sense__c DESC
-            LIMIT {limit}
+            LIMIT {_clamp_int(limit, 1, 500)}
         """)
     
     def get_6qa_accounts(self, limit: int = 50) -> List[Dict[str, Any]]:
@@ -329,7 +343,7 @@ class SalesforceClient:
             FROM Account
             WHERE account6QA6sense__c = true AND (Churned__c = false OR Churned__c = null)
             ORDER BY accountIntentScore6sense__c DESC
-            LIMIT {limit}
+            LIMIT {_clamp_int(limit, 1, 500)}
         """)
     
     # =========================================================================
@@ -348,9 +362,10 @@ class SalesforceClient:
     def get_campaign_members_by_account(self, account_id: str, 
                                          campaign_name_filter: str = None) -> List[Dict[str, Any]]:
         """Get campaign members (contacts/leads) associated with an account."""
-        where = f"Contact.AccountId = '{account_id}'"
+        safe_account_id = _soql_escape(account_id)
+        where = f"Contact.AccountId = '{safe_account_id}'"
         if campaign_name_filter:
-            where += f" AND Campaign.Name LIKE '%{campaign_name_filter}%'"
+            where += f" AND Campaign.Name LIKE '%{_soql_escape(campaign_name_filter)}%'"
         
         return self.query(f"""
             SELECT Id, ContactId, Contact.Name, Contact.Email, Contact.Title,
@@ -369,7 +384,7 @@ class SalesforceClient:
                    Contact.Account.accountBuyingStage6sense__c, Contact.Account.Churned__c,
                    COUNT(Id) memberCount
             FROM CampaignMember
-            WHERE Campaign.Name LIKE '%{campaign_name}%' AND Contact.AccountId != null
+            WHERE Campaign.Name LIKE '%{_soql_escape(campaign_name)}%' AND Contact.AccountId != null
             GROUP BY Contact.Account.Id, Contact.Account.Name, Contact.Account.Website,
                      Contact.Account.Domain__c, Contact.Account.accountIntentScore6sense__c,
                      Contact.Account.accountBuyingStage6sense__c, Contact.Account.Churned__c
@@ -385,7 +400,7 @@ class SalesforceClient:
         """Get open opportunities, optionally filtered by account."""
         where = "IsClosed = false"
         if account_id:
-            where += f" AND AccountId = '{account_id}'"
+            where += f" AND AccountId = '{_soql_escape(account_id)}'"
         
         return self.query(f"""
             SELECT Id, Name, StageName, Amount, CloseDate, 
@@ -409,7 +424,7 @@ class SalesforceClient:
         """Check if an account has any open opportunities."""
         results = self.query(f"""
             SELECT Id FROM Opportunity
-            WHERE AccountId = '{account_id}' AND IsClosed = false
+            WHERE AccountId = '{_soql_escape(account_id)}' AND IsClosed = false
             LIMIT 1
         """)
         return len(results) > 0
@@ -423,7 +438,7 @@ class SalesforceClient:
         return self.query(f"""
             SELECT Id, Name, Email, Title, Phone, Department
             FROM Contact
-            WHERE AccountId = '{account_id}'
+            WHERE AccountId = '{_soql_escape(account_id)}'
             ORDER BY CreatedDate DESC
             LIMIT 50
         """)
@@ -433,7 +448,7 @@ class SalesforceClient:
         return self.query(f"""
             SELECT Id, Name, Email, Title, Phone
             FROM Contact
-            WHERE AccountId = '{account_id}'
+            WHERE AccountId = '{_soql_escape(account_id)}'
               AND (Title LIKE '%CEO%' OR Title LIKE '%CTO%' OR Title LIKE '%VP%'
                    OR Title LIKE '%Head%' OR Title LIKE '%Director%' 
                    OR Title LIKE '%Founder%' OR Title LIKE '%Owner%'
@@ -452,7 +467,7 @@ class SalesforceClient:
             SELECT Id, Subject, Status, ActivityDate, Description,
                    OwnerId, Owner.Name, WhoId, Who.Name
             FROM Task
-            WHERE WhatId = '{account_id}' AND ActivityDate >= LAST_N_DAYS:{days}
+            WHERE WhatId = '{_soql_escape(account_id)}' AND ActivityDate >= LAST_N_DAYS:{_clamp_int(days, 1, 3650)}
             ORDER BY ActivityDate DESC
             LIMIT 30
         """)
@@ -461,7 +476,7 @@ class SalesforceClient:
         """Check if an account was contacted in the last N days."""
         results = self.query(f"""
             SELECT Id FROM Task
-            WHERE WhatId = '{account_id}' AND ActivityDate >= LAST_N_DAYS:{days}
+            WHERE WhatId = '{_soql_escape(account_id)}' AND ActivityDate >= LAST_N_DAYS:{_clamp_int(days, 1, 3650)}
             LIMIT 1
         """)
         return len(results) > 0
