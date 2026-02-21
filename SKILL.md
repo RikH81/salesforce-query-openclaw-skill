@@ -1,6 +1,13 @@
 ---
 name: salesforce-query-openclaw
 description: Salesforce querying skill that adapts to each org's schema. Use when hardcoded CRM scripts keep breaking across environments and you need reliable account/contact/opportunity/campaign/activity workflows with secure Keychain credential handling.
+metadata:
+  {
+    "openclaw":
+      {
+        "homepage": "https://github.com/RikH81/salesforce-query-openclaw-skill",
+      },
+  }
 ---
 
 # Salesforce Query (Schema-Adaptive)
@@ -8,6 +15,17 @@ description: Salesforce querying skill that adapts to each org's schema. Use whe
 Most Salesforce scripts work in one org, then break in the next. This skill was built to fix that.
 
 It discovers your schema first, then runs reusable GTM workflows against what actually exists in your environment.
+
+## Source code
+
+- GitHub: https://github.com/RikH81/salesforce-query-openclaw-skill
+
+## Security model
+
+- Credentials are stored in macOS Keychain (`openclaw.salesforce`)
+- No plaintext credential-file fallback
+- Supports session-only mode via `--no-save`
+- Restricts `SALESFORCE_INSTANCE_URL` to HTTPS Salesforce domains
 
 ## 1) Configure credentials
 

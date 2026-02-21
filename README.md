@@ -6,6 +6,10 @@ One team has 6sense fields, another does not. One org tracks campaign engagement
 
 This skill takes the opposite approach. It discovers what exists in your org first, then builds a reusable profile so queries and workflows fit your schema instead of fighting it.
 
+## Source code
+
+- GitHub: https://github.com/RikH81/salesforce-query-openclaw-skill
+
 ## What it helps with
 
 - Connecting to any Salesforce org via OAuth client credentials
