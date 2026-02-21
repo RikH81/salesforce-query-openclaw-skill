@@ -55,7 +55,7 @@ python3 scripts/onboarding.py --guided
 
 You can also type `help` at the first credential prompt to show setup guidance inline.
 
-If Python dependency `requests` is missing, onboarding auto-bootstraps a local venv at `.venv-salesforce` and continues.
+If Python dependency `requests` is missing, onboarding will stop and print explicit setup commands for a local `.venv-salesforce`.
 
 Run a credential safety check any time:
 

@@ -6,52 +6,20 @@ from __future__ import annotations
 import argparse
 import json
 import os
-import subprocess
-import sys
 from getpass import getpass
 from pathlib import Path
 
-BOOTSTRAP_ENV = "OPENCLAW_SF_BOOTSTRAPPED"
 
-
-def _ensure_requests_runtime(no_bootstrap: bool = False) -> int:
-    """Ensure `requests` is available. Auto-bootstrap a venv when needed.
-
-    Returns:
-        0 to continue in current process,
-        or child process exit code if this call re-executes onboarding.
-    """
+def _ensure_requests_runtime() -> int:
+    """Ensure `requests` is available and fail with explicit setup instructions."""
     try:
         import requests  # noqa: F401
 
         return 0
     except ModuleNotFoundError:
-        if no_bootstrap:
-            print("Missing Python dependency: requests")
-            print("Run: python3 -m venv .venv-salesforce && .venv-salesforce/bin/python -m pip install requests")
-            return 1
-
-        if os.environ.get(BOOTSTRAP_ENV) == "1":
-            print("Missing Python dependency: requests (bootstrap already attempted)")
-            print("Run: python3 -m venv .venv-salesforce && .venv-salesforce/bin/python -m pip install requests")
-            return 1
-
-        script_path = Path(__file__).resolve()
-        workspace_root = script_path.parents[3]
-        venv_dir = workspace_root / ".venv-salesforce"
-        venv_python = venv_dir / "bin" / "python"
-
-        print("Dependency missing: requests. Bootstrapping local venv...")
-
-        subprocess.check_call([sys.executable, "-m", "venv", str(venv_dir)])
-        subprocess.check_call([str(venv_python), "-m", "pip", "install", "requests"])
-
-        env = os.environ.copy()
-        env[BOOTSTRAP_ENV] = "1"
-
-        # Replace current process so we do not continue in an interpreter
-        # that still lacks `requests`.
-        os.execvpe(str(venv_python), [str(venv_python), str(script_path), *sys.argv[1:]], env)
+        print("Missing Python dependency: requests")
+        print("Run: python3 -m venv .venv-salesforce && .venv-salesforce/bin/python -m pip install requests")
+        print("Then re-run onboarding with: .venv-salesforce/bin/python scripts/onboarding.py")
         return 1
 
 
@@ -136,10 +104,9 @@ def main() -> int:
     parser.add_argument("--non-interactive", action="store_true", help="Fail instead of prompting for credentials")
     parser.add_argument("--guided", action="store_true", help="Show quick credential setup guidance before prompts")
     parser.add_argument("--no-save", action="store_true", help="Do not persist credentials; use session-only env vars")
-    parser.add_argument("--no-bootstrap", action="store_true", help="Do not auto-create venv/install requests")
     args = parser.parse_args()
 
-    runtime_status = _ensure_requests_runtime(no_bootstrap=args.no_bootstrap)
+    runtime_status = _ensure_requests_runtime()
     if runtime_status != 0:
         return runtime_status
 

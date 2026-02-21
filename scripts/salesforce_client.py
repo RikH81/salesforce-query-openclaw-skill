@@ -29,6 +29,7 @@ Credentials:
 
 import requests
 import os
+import re
 import subprocess
 from typing import Optional, List, Dict, Any
 from datetime import datetime, timedelta
@@ -135,23 +136,33 @@ def get_credentials() -> Dict[str, Optional[str]]:
     }
 
 
+def _is_valid_instance_url(instance_url: Optional[str]) -> bool:
+    """Allow only HTTPS Salesforce domains."""
+    if not instance_url:
+        return False
+    value = instance_url.strip().rstrip("/")
+    # my.salesforce.com, lightning.force.com, and sandbox variants.
+    pattern = r"^https://[a-zA-Z0-9.-]+\.(my\.salesforce\.com|lightning\.force\.com|sandbox\.my\.salesforce\.com)$"
+    return bool(re.match(pattern, value))
+
+
 def check_credentials() -> tuple[bool, List[str]]:
     """
     Check if all required credentials are configured.
-    
+
     Returns:
         Tuple of (all_configured: bool, missing_vars: List[str])
     """
     creds = get_credentials()
     missing = []
-    
+
     if not creds['client_id']:
         missing.append('SALESFORCE_CLIENT_ID')
     if not creds['client_secret']:
         missing.append('SALESFORCE_CLIENT_SECRET')
-    if not creds['instance_url']:
+    if not creds['instance_url'] or not _is_valid_instance_url(creds['instance_url']):
         missing.append('SALESFORCE_INSTANCE_URL')
-    
+
     return (len(missing) == 0, missing)
 
 
@@ -196,7 +207,7 @@ class SalesforceClient:
         })
         
         if response.status_code != 200:
-            raise Exception(f"Failed to get access token: {response.text}")
+            raise Exception(f"Failed to get access token (HTTP {response.status_code})")
         
         data = response.json()
         self._access_token = data["access_token"]
@@ -216,7 +227,7 @@ class SalesforceClient:
         )
         
         if response.status_code != 200:
-            raise Exception(f"Query failed: {response.text}")
+            raise Exception(f"Query failed (HTTP {response.status_code})")
         
         data = response.json()
         records = data.get("records", [])
@@ -240,7 +251,7 @@ class SalesforceClient:
         response = requests.get(url, headers={"Authorization": f"Bearer {token}"})
         
         if response.status_code != 200:
-            raise Exception(f"Describe failed: {response.text}")
+            raise Exception(f"Describe failed (HTTP {response.status_code})")
         
         return response.json()
     
