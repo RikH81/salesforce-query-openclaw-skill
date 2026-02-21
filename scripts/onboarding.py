@@ -6,6 +6,7 @@ from __future__ import annotations
 import argparse
 import json
 import os
+import sys
 from getpass import getpass
 from pathlib import Path
 
@@ -78,14 +79,19 @@ def _prompt_and_save_credentials(
     if "SALESFORCE_INSTANCE_URL" in missing:
         instance_url = input("Enter SALESFORCE_INSTANCE_URL: ").strip()
 
-    if not all([client_id, client_secret, instance_url]):
+    provided = {
+        "SALESFORCE_CLIENT_ID": client_id,
+        "SALESFORCE_CLIENT_SECRET": client_secret,
+        "SALESFORCE_INSTANCE_URL": instance_url,
+    }
+    if any((name in missing) and (not provided[name]) for name in provided):
         print("Credential capture aborted or incomplete.")
         return False
 
     if persist:
         save_credentials(client_id=client_id, client_secret=client_secret, instance_url=instance_url)
-        print("Credentials saved.")
-        print("Tip: run `python3 scripts/credential_doctor.py` to verify local credential file safety.")
+        print("Credentials saved to macOS Keychain.")
+        print("Tip: run `python3 scripts/credential_doctor.py` to verify credential storage safety.")
     else:
         os.environ['SALESFORCE_CLIENT_ID'] = client_id
         os.environ['SALESFORCE_CLIENT_SECRET'] = client_secret
@@ -149,7 +155,12 @@ def main() -> int:
         return 1
 
     discovery = SchemaDiscovery(sf)
-    schema = discovery.discover()
+    try:
+        schema = discovery.discover()
+    except Exception as exc:
+        print(f"Discovery failed: {exc}")
+        print("Check network connectivity, Salesforce availability, and integration-user permissions.")
+        return 1
     questions = infer_open_questions(schema)
 
     profile = {
